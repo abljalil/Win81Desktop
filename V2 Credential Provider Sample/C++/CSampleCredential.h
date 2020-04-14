@@ -100,7 +100,7 @@ public:
                        _In_ FIELD_STATE_PAIR const *rgfsp,
                        _In_ ICredentialProviderUser *pcpUser);
     CSampleCredential();
-
+	BOOL bRemoteLogin;
   private:
 
     virtual ~CSampleCredential();

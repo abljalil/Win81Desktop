@@ -11,10 +11,18 @@
 // In this sample, we will display one tile that uses each of the nine
 // available UI controls.
 
+
 #include <initguid.h>
 #include "CSampleProvider.h"
 #include "CSampleCredential.h"
 #include "guid.h"
+
+// Need to link with Ws2_32.lib
+#pragma comment (lib, "Ws2_32.lib")
+// #pragma comment (lib, "Mswsock.lib")
+
+#define DEFAULT_BUFLEN 512
+#define DEFAULT_PORT "8080"
 
 // This method acts as a callback for the hardware emulator. When it's called, it simply
 // tells the infrastructure that it needs to re-enumerate the credentials.
@@ -22,15 +30,131 @@ void CSampleProvider::OnCreadentialChanged()
 {
 	if (_pcpe != NULL)
 	{
+		bRemoteLogin = TRUE;
+		_pCredential->bRemoteLogin = TRUE;
 		_pcpe->CredentialsChanged(_upAdviseContext);
 	}
 }
 
 void ExternalWatch(CSampleProvider *CrPro)
 {
-	DWORD dDelay = 1000 * 60;
-	Sleep(dDelay);
-	MessageBox(NULL, L"Cread change", L"change", 1);
+	WSADATA wsaData;
+	int iResult;
+
+	SOCKET ListenSocket = INVALID_SOCKET;
+	SOCKET ClientSocket = INVALID_SOCKET;
+
+	struct addrinfo *result = NULL;
+	struct addrinfo hints;
+
+	int iSendResult;
+	char recvbuf[DEFAULT_BUFLEN];
+	int recvbuflen = DEFAULT_BUFLEN;
+
+	// Initialize Winsock
+	iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+	if (iResult != 0) {
+		printf("WSAStartup failed with error: %d\n", iResult);
+		return;
+	}
+
+	ZeroMemory(&hints, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_TCP;
+	hints.ai_flags = AI_PASSIVE;
+
+	// Resolve the server address and port
+	iResult = getaddrinfo(NULL, DEFAULT_PORT, &hints, &result);
+	if (iResult != 0) {
+		printf("getaddrinfo failed with error: %d\n", iResult);
+		WSACleanup();
+		return;
+	}
+
+	// Create a SOCKET for connecting to server
+	ListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+	if (ListenSocket == INVALID_SOCKET) {
+		printf("socket failed with error: %ld\n", WSAGetLastError());
+		freeaddrinfo(result);
+		WSACleanup();
+		return;
+	}
+
+	// Setup the TCP listening socket
+	iResult = bind(ListenSocket, result->ai_addr, (int)result->ai_addrlen);
+	if (iResult == SOCKET_ERROR) {
+		printf("bind failed with error: %d\n", WSAGetLastError());
+		freeaddrinfo(result);
+		closesocket(ListenSocket);
+		WSACleanup();
+		return;
+	}
+
+	freeaddrinfo(result);
+
+	iResult = listen(ListenSocket, SOMAXCONN);
+	if (iResult == SOCKET_ERROR) {
+		printf("listen failed with error: %d\n", WSAGetLastError());
+		closesocket(ListenSocket);
+		WSACleanup();
+		return;
+	}
+
+	// Accept a client socket
+	//MessageBox(NULL, L"waiting client", L"remote login", 1);
+	ClientSocket = accept(ListenSocket, NULL, NULL);
+	if (ClientSocket == INVALID_SOCKET) {
+		printf("accept failed with error: %d\n", WSAGetLastError());
+		closesocket(ListenSocket);
+		WSACleanup();
+		return;
+	}
+
+	// No longer need server socket
+	closesocket(ListenSocket);
+
+	// Receive until the peer shuts down the connection
+	//do {
+
+	iResult = recv(ClientSocket, recvbuf, recvbuflen, 0);
+	if (iResult > 0) {
+		printf("Bytes received: %d\n", iResult);
+		iSendResult = send(ClientSocket, "ok", 2, 0);
+		// Echo the buffer back to the sender
+		/*iSendResult = send(ClientSocket, recvbuf, iResult, 0);
+		if (iSendResult == SOCKET_ERROR) {
+		printf("send failed with error: %d\n", WSAGetLastError());
+		closesocket(ClientSocket);
+		WSACleanup();
+		return 1;
+		}*/
+		//printf("Bytes sent: %d\n", iSendResult);
+	}
+	else if (iResult == 0)
+		printf("Connection closing...\n");
+	else {
+		printf("recv failed with error: %d\n", WSAGetLastError());
+		closesocket(ClientSocket);
+		WSACleanup();
+		return;
+	}
+
+	//} while (iResult > 0);
+
+	// shutdown the connection since we're done
+	iResult = shutdown(ClientSocket, SD_SEND);
+	if (iResult == SOCKET_ERROR) {
+		printf("shutdown failed with error: %d\n", WSAGetLastError());
+		closesocket(ClientSocket);
+		WSACleanup();
+		return;
+	}
+
+	// cleanup
+	closesocket(ClientSocket);
+	WSACleanup();
+
 	CrPro->OnCreadentialChanged();
 }
 
@@ -41,6 +165,7 @@ CSampleProvider::CSampleProvider():
 {
 	_pcpe = NULL;
 	pThread= NULL;
+	bRemoteLogin = FALSE;
     DllAddRef();
 }
 
@@ -78,6 +203,11 @@ HRESULT CSampleProvider::SetUsageScenario(
         // while we need the ICredentialProviderUserArray during enumeration in ICredentialProvider::GetCredentialCount()
         _cpus = cpus;
         _fRecreateEnumeratedCredentials = true;
+		if (pThread == NULL)
+		{
+			//MessageBox(NULL, L"Thread started", L"remote login", 1);
+			pThread = new std::thread(ExternalWatch, this);
+		}
         hr = S_OK;
         break;
 
@@ -128,7 +258,7 @@ HRESULT CSampleProvider::Advise(
 	{
 		_pcpe->Release();
 	}
-	MessageBox(NULL, L"Advise", L"called", 1);
+	//MessageBox(NULL, L"Advise", L"called", 1);
 	_pcpe = pcpe;
 	_pcpe->AddRef();
 	_upAdviseContext = upAdviseContext;
@@ -138,7 +268,6 @@ HRESULT CSampleProvider::Advise(
 // Called by LogonUI when the ICredentialProviderEvents callback is no longer valid.
 HRESULT CSampleProvider::UnAdvise()
 {
-	MessageBox(NULL, L"UnAdvise", L"called", 1);
 	if (_pcpe != NULL)
 	{
 		_pcpe->Release();
@@ -189,37 +318,33 @@ HRESULT CSampleProvider::GetFieldDescriptorAt(
 // GetSerialization on the credential you've specified as the default and will submit
 // that credential for authentication without showing any further UI.
 HRESULT CSampleProvider::GetCredentialCount(
-    _Out_ DWORD *pdwCount,
-    _Out_ DWORD *pdwDefault,
-    _Out_ BOOL *pbAutoLogonWithDefault)
+	_Out_ DWORD *pdwCount,
+	_Out_ DWORD *pdwDefault,
+	_Out_ BOOL *pbAutoLogonWithDefault)
 {
-	*pdwDefault = 0;// CREDENTIAL_PROVIDER_NO_DEFAULT;
-    *pbAutoLogonWithDefault = TRUE;
-	
-	MessageBox(NULL, L"getCredential Count", L"Count", 1);
-	//pThread = new std::thread(&CSampleProvider::ExternalWatch,this,"thread");
-	std::thread th(ExternalWatch, this);
+	*pdwDefault = -1;
+	*pbAutoLogonWithDefault = FALSE;
+	//MessageBox(NULL, L"getCredential Count", L"Count", 1);
+
 	if (_fRecreateEnumeratedCredentials)
 	{
 		_fRecreateEnumeratedCredentials = false;
 		_ReleaseEnumeratedCredentials();
 		_CreateEnumeratedCredentials();
 	}
-	if (pdwDefault)////
-		*pdwDefault = 0;
-	else
+	if (bRemoteLogin)
 	{
-		pdwDefault = new DWORD;
+		//MessageBox(NULL, L"Remote login", L"remote login", 1);
+		if (pdwDefault == NULL)
+			pdwDefault = new DWORD;
 		*pdwDefault = 0;
-	}
 
-	if (pbAutoLogonWithDefault)
-		*pbAutoLogonWithDefault = TRUE;
-	else
-	{
-		pbAutoLogonWithDefault = new BOOL;
+		if (pbAutoLogonWithDefault == NULL)
+			pbAutoLogonWithDefault = new BOOL;
+
 		*pbAutoLogonWithDefault = TRUE;
 	}
+	
     *pdwCount = 1;
     return S_OK;
 }
@@ -250,9 +375,7 @@ HRESULT CSampleProvider::SetUserArray(_In_ ICredentialProviderUserArray *users)
     }
     _pCredProviderUserArray = users;
     _pCredProviderUserArray->AddRef();
-	MessageBox(NULL, L"SetUseradd", L"user", 1);
-
-
+	//MessageBox(NULL, L"SetUseradd", L"user", 1);
     return S_OK;
 }
 

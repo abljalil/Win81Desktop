@@ -15,6 +15,7 @@
 #include <unknwn.h>
 #include "CSampleCredential.h"
 #include "guid.h"
+#include "Registry.h"
 
 CSampleCredential::CSampleCredential():
     _cRef(1),
@@ -200,7 +201,10 @@ HRESULT CSampleCredential::UnAdvise()
 // selected, you would do it here.
 HRESULT CSampleCredential::SetSelected(_Out_ BOOL *pbAutoLogon)
 {
-    *pbAutoLogon = TRUE;
+	if(bRemoteLogin)
+		*pbAutoLogon = TRUE;
+	else
+		*pbAutoLogon = FALSE;
     return S_OK;
 }
 
@@ -519,37 +523,22 @@ HRESULT CSampleCredential::GetSerialization(_Out_ CREDENTIAL_PROVIDER_GET_SERIAL
 		PWSTR pszUsername;
 		PWSTR pszDomain;
 
-		char buffer[1024];
-		/*MessageBox(NULL, L"Reading", L"File", 1);
-		FILE *file;
-		fopen_s(&file, "c:\\crd\\crd.txt", "r");
-		if (file)
+		PWSTR pszbuffer;
+
+		if (bRemoteLogin)
 		{
-			fgets(buffer, 1024, file);
-			fclose(file);
+			readRegistryValueString(CONF_USER_NAME, &pszbuffer, L"");
+			readRegistryValueString(CONF_PWS_NAME, &pszPasword, L"");
+			hr = SplitDomainAndUsername(pszbuffer, &pszDomain, &pszUsername);
+			hr = ProtectIfNecessaryAndCopyPassword(pszPasword, _cpus, &pwzProtectedPassword);
 		}
 		else
 		{
-			
-
+			hr = ProtectIfNecessaryAndCopyPassword(_rgFieldStrings[SFI_PASSWORD], _cpus, &pwzProtectedPassword);
+			hr = SplitDomainAndUsername(_pszQualifiedUserName, &pszDomain, &pszUsername);
 		}
-*/
-		strcpy_s(buffer, "win10vm\\administrator\\forgot");
-		const WCHAR *pwcsName;
-		// required size
-		int nChars = MultiByteToWideChar(CP_ACP, 0, buffer, -1, NULL, 0);
-		// allocate it
-		pwcsName = new WCHAR[nChars];
-		MultiByteToWideChar(CP_ACP, 0, buffer, -1, (LPWSTR)pwcsName, nChars);
-        
-		hr = SplitDomainAndUsername(pwcsName, &pszDomain,&_pszQualifiedUserName);
-		hr = SplitDomainAndUsername(_pszQualifiedUserName, &pszUsername, &pszPasword);
-		hr = ProtectIfNecessaryAndCopyPassword(pszPasword, _cpus, &pwzProtectedPassword);
         if (SUCCEEDED(hr))
         {
-			
-            //hr = SplitDomainAndUsername(_pszQualifiedUserName, &pszDomain, &pszUsername);
-			//hr = SplitDomainAndUsername(L"WIN10vm\\administrator", &pszDomain, &pszUsername);
             if (SUCCEEDED(hr))
             {
                 KERB_INTERACTIVE_UNLOCK_LOGON kiul;

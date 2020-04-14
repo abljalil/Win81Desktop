@@ -6,14 +6,21 @@
 //
 // Copyright (c) Microsoft Corporation. All rights reserved.
 //
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #include "helpers.h"
-#include <windows.h>
+//#include <windows.h>
 #include <strsafe.h>
 #include <new>
 
 #include "CSampleCredential.h"
-#include <thread>         // std::thread
+#include <thread>   
+// std::thread
 
 class CSampleProvider : public ICredentialProvider,
                         public ICredentialProviderSetUserArray
@@ -66,6 +73,7 @@ class CSampleProvider : public ICredentialProvider,
 
     friend HRESULT CSample_CreateInstance(_In_ REFIID riid, _Outptr_ void** ppv);
 	void OnCreadentialChanged();
+	BOOL				bRemoteLogin;
   protected:
     CSampleProvider();
     __override ~CSampleProvider();
@@ -78,6 +86,7 @@ class CSampleProvider : public ICredentialProvider,
     HRESULT _EnumerateEmpty();
     HRESULT _EnumerateCredentials();
     HRESULT _EnumerateEmptyTileCredential();
+	std::thread *pThread;
 private:
     long                                    _cRef;            // Used for reference counting.
     CSampleCredential                       *_pCredential;    // SampleV2Credential
@@ -86,6 +95,5 @@ private:
     ICredentialProviderUserArray            *_pCredProviderUserArray;
 	ICredentialProviderEvents   *_pcpe;                    // Used to tell our owner to re-enumerate credentials.
 	UINT_PTR                    _upAdviseContext;       // Used to tell our owner who we are when asking to 
-	std::thread *pThread;
 
 };

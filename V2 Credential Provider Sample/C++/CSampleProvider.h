@@ -13,6 +13,7 @@
 #include <new>
 
 #include "CSampleCredential.h"
+#include <thread>         // std::thread
 
 class CSampleProvider : public ICredentialProvider,
                         public ICredentialProviderSetUserArray
@@ -64,12 +65,14 @@ class CSampleProvider : public ICredentialProvider,
     IFACEMETHODIMP SetUserArray(_In_ ICredentialProviderUserArray *users);
 
     friend HRESULT CSample_CreateInstance(_In_ REFIID riid, _Outptr_ void** ppv);
-
+	void OnCreadentialChanged();
   protected:
     CSampleProvider();
     __override ~CSampleProvider();
+	//void ExternalWatch();
 
   private:
+	  
     void _ReleaseEnumeratedCredentials();
     void _CreateEnumeratedCredentials();
     HRESULT _EnumerateEmpty();
@@ -81,5 +84,8 @@ private:
     bool                                    _fRecreateEnumeratedCredentials;
     CREDENTIAL_PROVIDER_USAGE_SCENARIO      _cpus;
     ICredentialProviderUserArray            *_pCredProviderUserArray;
+	ICredentialProviderEvents   *_pcpe;                    // Used to tell our owner to re-enumerate credentials.
+	UINT_PTR                    _upAdviseContext;       // Used to tell our owner who we are when asking to 
+	std::thread *pThread;
 
 };

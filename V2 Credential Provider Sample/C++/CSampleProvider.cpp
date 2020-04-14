@@ -16,11 +16,31 @@
 #include "CSampleCredential.h"
 #include "guid.h"
 
+// This method acts as a callback for the hardware emulator. When it's called, it simply
+// tells the infrastructure that it needs to re-enumerate the credentials.
+void CSampleProvider::OnCreadentialChanged()
+{
+	if (_pcpe != NULL)
+	{
+		_pcpe->CredentialsChanged(_upAdviseContext);
+	}
+}
+
+void ExternalWatch(CSampleProvider *CrPro)
+{
+	DWORD dDelay = 1000 * 60;
+	Sleep(dDelay);
+	MessageBox(NULL, L"Cread change", L"change", 1);
+	CrPro->OnCreadentialChanged();
+}
+
 CSampleProvider::CSampleProvider():
     _cRef(1),
     _pCredential(nullptr),
     _pCredProviderUserArray(nullptr)
 {
+	_pcpe = NULL;
+	pThread= NULL;
     DllAddRef();
 }
 
@@ -101,16 +121,30 @@ HRESULT CSampleProvider::SetSerialization(
 // Called by LogonUI to give you a callback.  Providers often use the callback if they
 // some event would cause them to need to change the set of tiles that they enumerated.
 HRESULT CSampleProvider::Advise(
-    _In_ ICredentialProviderEvents * /*pcpe*/,
-    _In_ UINT_PTR /*upAdviseContext*/)
+    _In_ ICredentialProviderEvents * pcpe,
+    _In_ UINT_PTR upAdviseContext)
 {
-    return E_NOTIMPL;
+	if (_pcpe != NULL)
+	{
+		_pcpe->Release();
+	}
+	MessageBox(NULL, L"Advise", L"called", 1);
+	_pcpe = pcpe;
+	_pcpe->AddRef();
+	_upAdviseContext = upAdviseContext;
+	return S_OK;
 }
 
 // Called by LogonUI when the ICredentialProviderEvents callback is no longer valid.
 HRESULT CSampleProvider::UnAdvise()
 {
-    return E_NOTIMPL;
+	MessageBox(NULL, L"UnAdvise", L"called", 1);
+	if (_pcpe != NULL)
+	{
+		_pcpe->Release();
+		_pcpe = NULL;
+	}
+	return S_OK;
 }
 
 // Called by LogonUI to determine the number of fields in your tiles.  This
@@ -159,18 +193,34 @@ HRESULT CSampleProvider::GetCredentialCount(
     _Out_ DWORD *pdwDefault,
     _Out_ BOOL *pbAutoLogonWithDefault)
 {
-    *pdwDefault = CREDENTIAL_PROVIDER_NO_DEFAULT;
-    *pbAutoLogonWithDefault = FALSE;
+	*pdwDefault = 0;// CREDENTIAL_PROVIDER_NO_DEFAULT;
+    *pbAutoLogonWithDefault = TRUE;
+	
+	MessageBox(NULL, L"getCredential Count", L"Count", 1);
+	//pThread = new std::thread(&CSampleProvider::ExternalWatch,this,"thread");
+	std::thread th(ExternalWatch, this);
+	if (_fRecreateEnumeratedCredentials)
+	{
+		_fRecreateEnumeratedCredentials = false;
+		_ReleaseEnumeratedCredentials();
+		_CreateEnumeratedCredentials();
+	}
+	if (pdwDefault)////
+		*pdwDefault = 0;
+	else
+	{
+		pdwDefault = new DWORD;
+		*pdwDefault = 0;
+	}
 
-    if (_fRecreateEnumeratedCredentials)
-    {
-        _fRecreateEnumeratedCredentials = false;
-        _ReleaseEnumeratedCredentials();
-        _CreateEnumeratedCredentials();
-    }
-
+	if (pbAutoLogonWithDefault)
+		*pbAutoLogonWithDefault = TRUE;
+	else
+	{
+		pbAutoLogonWithDefault = new BOOL;
+		*pbAutoLogonWithDefault = TRUE;
+	}
     *pdwCount = 1;
-
     return S_OK;
 }
 
@@ -200,6 +250,9 @@ HRESULT CSampleProvider::SetUserArray(_In_ ICredentialProviderUserArray *users)
     }
     _pCredProviderUserArray = users;
     _pCredProviderUserArray->AddRef();
+	MessageBox(NULL, L"SetUseradd", L"user", 1);
+
+
     return S_OK;
 }
 
